@@ -43,7 +43,7 @@ Un utente può appartenere a più organizzazioni (tabella `memberships`, che sos
 2. Render legge `render.yaml` e chiede i valori segreti:
    - `DATABASE_URL`: la stringa del Session pooler Supabase con prefisso `postgresql+psycopg://` (password URL-encoded).
    - `SUPABASE_URL`: `https://<project-ref>.supabase.co`
-   - `CORS_ORIGINS`: per ora `["http://localhost:3000"]`; dopo il passo 2 diventa `["https://<app>.vercel.app"]`.
+   - `CORS_ORIGINS`: per ora `http://localhost:3000`; dopo il passo 2 diventa `https://<app>.vercel.app` (più indirizzi separati da virgola).
 3. A deploy finito, `https://<servizio>.onrender.com/health` risponde `{"status":"ok"}`.
 
 Il piano gratuito di Render sospende il servizio dopo 15 minuti di inattività: la prima richiesta successiva impiega ~1 minuto.
@@ -60,7 +60,7 @@ Il piano gratuito di Render sospende il servizio dopo 15 minuti di inattività: 
 
 ### 3. Collegamenti finali
 
-- Render → servizio → *Environment*: `CORS_ORIGINS` = `["https://<app>.vercel.app"]`.
+- Render → servizio → *Environment*: `CORS_ORIGINS` = `https://<app>.vercel.app`.
 - Supabase → *Authentication → URL Configuration*: Site URL `https://<app>.vercel.app`, Redirect URL `https://<app>.vercel.app/auth/callback`.
 
 Le variabili `NEXT_PUBLIC_*` sono incluse nel build: dopo averle cambiate su Vercel serve un *Redeploy*.

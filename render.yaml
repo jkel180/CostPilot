@@ -24,4 +24,4 @@ services:
       - key: SUPABASE_URL
         sync: false # https://<project-ref>.supabase.co
       - key: CORS_ORIGINS
-        sync: false # JSON list with the Vercel URL, e.g. ["https://costpilot.vercel.app"]
+        sync: false # the Vercel URL, e.g. https://costpilot.vercel.app (comma-separate several)

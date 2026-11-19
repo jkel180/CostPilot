@@ -1,7 +1,9 @@
+import json
 from functools import lru_cache
+from typing import Annotated, Any
 
-from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -16,7 +18,19 @@ class Settings(BaseSettings):
     supabase_jwt_secret: str = ""
     jwt_audience: str = "authenticated"
 
-    cors_origins: list[str] = ["http://localhost:3000"]
+    # Accepts a JSON list, a comma-separated list or a single URL.
+    cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:3000"]
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, v: Any) -> Any:
+        if not isinstance(v, str):
+            return v
+        v = v.strip()
+        if v.startswith("["):
+            return json.loads(v)
+        # trailing slashes never match a browser Origin header
+        return [o.strip().strip("\"'").rstrip("/") for o in v.split(",") if o.strip()]
 
     @property
     def jwt_issuer(self) -> str | None:
