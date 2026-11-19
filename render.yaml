@@ -1,0 +1,27 @@
+# Render Blueprint: CostPilot API (FastAPI) deployed from GitHub.
+# Render > New > Blueprint > pick this repository. Secrets marked `sync: false`
+# are asked for in the Render dashboard and never stored in git.
+services:
+  - type: web
+    name: costpilot-api
+    runtime: python
+    region: frankfurt
+    plan: free
+    rootDir: apps/api
+    branch: main
+    autoDeploy: true
+    buildCommand: pip install -r requirements.txt
+    # Migrations run on every deploy; Alembic skips revisions already applied.
+    startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips '*'
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: PYTHON_VERSION
+        value: 3.12.10
+      - key: DATABASE_URL
+        sync: false # Supabase Session pooler URL with the postgresql+psycopg:// prefix
+      - key: SUPABASE_URL
+        sync: false # https://<project-ref>.supabase.co
+      - key: CORS_ORIGINS
+        sync: false # JSON list with the Vercel URL, e.g. ["https://costpilot.vercel.app"]

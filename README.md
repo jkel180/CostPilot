@@ -29,6 +29,42 @@ Database e autenticazione: **Supabase** (PostgreSQL gestito + Supabase Auth).
 
 Un utente può appartenere a più organizzazioni (tabella `memberships`, che sostituisce `users.organization_id` / `users.role` del PRD).
 
+## Deploy in cloud (da GitHub)
+
+| Componente | Servizio | Deploy |
+|---|---|---|
+| Database + Auth | Supabase | già attivo |
+| Backend `apps/api` | Render (`render.yaml`) | automatico a ogni push su `main`; le migrazioni girano all'avvio |
+| Frontend `apps/web` | Vercel | automatico a ogni push su `main`; anteprime per ogni branch |
+
+### 1. Backend su Render
+
+1. render.com → accedi con GitHub → *New → Blueprint* → repository `CostPilot`.
+2. Render legge `render.yaml` e chiede i valori segreti:
+   - `DATABASE_URL`: la stringa del Session pooler Supabase con prefisso `postgresql+psycopg://` (password URL-encoded).
+   - `SUPABASE_URL`: `https://<project-ref>.supabase.co`
+   - `CORS_ORIGINS`: per ora `["http://localhost:3000"]`; dopo il passo 2 diventa `["https://<app>.vercel.app"]`.
+3. A deploy finito, `https://<servizio>.onrender.com/health` risponde `{"status":"ok"}`.
+
+Il piano gratuito di Render sospende il servizio dopo 15 minuti di inattività: la prima richiesta successiva impiega ~1 minuto.
+
+### 2. Frontend su Vercel
+
+1. vercel.com → accedi con GitHub → *Add New → Project* → repository `CostPilot`.
+2. **Root Directory: `apps/web`** (framework rilevato: Next.js).
+3. Environment Variables:
+   - `NEXT_PUBLIC_SUPABASE_URL` = `https://<project-ref>.supabase.co`
+   - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` = la publishable key
+   - `NEXT_PUBLIC_API_URL` = `https://<servizio>.onrender.com`
+4. Deploy.
+
+### 3. Collegamenti finali
+
+- Render → servizio → *Environment*: `CORS_ORIGINS` = `["https://<app>.vercel.app"]`.
+- Supabase → *Authentication → URL Configuration*: Site URL `https://<app>.vercel.app`, Redirect URL `https://<app>.vercel.app/auth/callback`.
+
+Le variabili `NEXT_PUBLIC_*` sono incluse nel build: dopo averle cambiate su Vercel serve un *Redeploy*.
+
 ## Setup locale
 
 Prerequisiti: Node.js ≥ 20, Python 3.12, un progetto Supabase.
