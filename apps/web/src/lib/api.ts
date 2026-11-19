@@ -1,6 +1,10 @@
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+// NEXT_PUBLIC_* values are inlined at build time: changing them on the host needs a redeploy.
+// Fall back to the local API only in development, never silently in a deployed build.
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, "") ||
+  (process.env.NODE_ENV === "development" ? "http://localhost:8000" : null);
 
 export class ApiError extends Error {
   constructor(
@@ -15,6 +19,9 @@ type Options = { method?: "GET" | "POST" | "PATCH" | "DELETE"; body?: unknown; o
 
 /** Call the CostPilot API with the user's Supabase access token and organization context. */
 export async function apiFetch<T>(path: string, { method = "GET", body, orgId }: Options = {}): Promise<T> {
+  if (!API_URL) {
+    throw new ApiError(0, "NEXT_PUBLIC_API_URL is not set for this deployment. Set it on the host and redeploy.");
+  }
   const { data } = await getSupabaseBrowserClient().auth.getSession();
   const token = data.session?.access_token;
   if (!token) throw new ApiError(401, "Your session has expired. Please sign in again.");
