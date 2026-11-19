@@ -1,0 +1,11 @@
+Data;Fornitore;Descrizione;Quantità;UM;Prezzo unitario;Valuta;Brix;Origine;Incoterm
+15/01/2026;Fornitore Esempio A;Succo di limone concentrato 400 GPL (ESEMPIO);10.000;kg;2,35;EUR;48;AR;CIF
+12/02/2026;Fornitore Esempio B;Succo di limone concentrato 400 GPL (ESEMPIO);5.000;kg;2,48;EUR;48;ZA;CIF
+10/03/2026;Fornitore Esempio A;Succo di limone concentrato 400 GPL (ESEMPIO);12.000;kg;2,30;EUR;48;AR;CIF
+14/04/2026;Fornitore Esempio C;Succo di limone concentrato 400 GPL (ESEMPIO);4.000;kg;2,60;EUR;50;ES;DAP
+13/05/2026;Fornitore Esempio A;Succo di limone concentrato 400 GPL (ESEMPIO);8.000;kg;2,25;EUR;48;AR;CIF
+16/06/2026;Fornitore Esempio B;Succo di limone concentrato 400 GPL (ESEMPIO);6.000;kg;2,55;EUR;48;ZA;CIF
+15/07/2026;Fornitore Esempio A;Succo di limone concentrato 400 GPL (ESEMPIO);10.000;kg;2,70;EUR;48;AR;CIF
+18/08/2026;Fornitore Esempio C;Succo di limone concentrato 400 GPL (ESEMPIO);3.000;kg;2,95;EUR;50;ES;DAP
+15/09/2026;Fornitore Esempio A;Succo di limone concentrato 400 GPL (ESEMPIO);9.000;kg;2,80;EUR;48;AR;CIF
+data-sbagliata;Fornitore Esempio B;Riga con errore volontario (ESEMPIO);1.000;kg;2,50;EUR;48;ZA;CIF

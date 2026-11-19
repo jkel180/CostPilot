@@ -159,10 +159,14 @@ export default function MarketPage() {
     [volumes, cutoff],
   );
 
-  const originsWithPrices = useMemo(
-    () => (prices?.series ?? []).filter((s) => s.geography !== BENCH).map((s) => ({ geo: s.geography, label: s.label })),
-    [prices],
-  );
+  // largest origins by latest-month volume first
+  const originsWithPrices = useMemo(() => {
+    const rank = new Map((overview?.origins ?? []).map((o, i) => [o.geography, i]));
+    return (prices?.series ?? [])
+      .filter((s) => s.geography !== BENCH)
+      .map((s) => ({ geo: s.geography, label: s.label }))
+      .sort((a, b) => (rank.get(a.geo) ?? 99) - (rank.get(b.geo) ?? 99));
+  }, [prices, overview]);
 
   const toggle = (geo: string) =>
     setCompare((c) => {

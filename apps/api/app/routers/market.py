@@ -26,7 +26,9 @@ def get_commodity(db: DbSession, code: str) -> Commodity:
 def _label(obs) -> str:
     if obs.geography == market.BENCHMARK_GEOGRAPHY:
         return "Extra-EU total"
-    return (obs.attributes or {}).get("partner_label") or obs.geography
+    label = (obs.attributes or {}).get("partner_label") or obs.geography
+    # Eurostat labels carry historical notes, e.g. "South Africa (incl. Namibia 'NA' -> 1989)"
+    return label.split(" (")[0].strip() or obs.geography
 
 
 def source_infos(db: DbSession, com: Commodity) -> list[SourceInfo]:
