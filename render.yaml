@@ -25,3 +25,7 @@ services:
         sync: false # https://<project-ref>.supabase.co
       - key: CORS_ORIGINS
         sync: false # the Vercel URL, e.g. https://costpilot.vercel.app (comma-separate several)
+      - key: PLATFORM_ADMIN_EMAILS
+        sync: false # CostPilot operators allowed to manage shared market data (comma-separated)
+      - key: INGESTION_TOKEN
+        sync: false # long random secret, also stored as a GitHub Actions secret for the monthly import

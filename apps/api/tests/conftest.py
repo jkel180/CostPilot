@@ -14,14 +14,17 @@ from sqlalchemy.pool import StaticPool
 from app.config import Settings, get_settings
 from app.db import get_db
 from app.main import create_app
-from app.models import Base, Commodity
+from app.models import Base, Commodity, DataSource, ProductSpec, SourceType
 
 TEST_SECRET = "test-secret-at-least-32-bytes-long-for-hs256"
 
 
 @pytest.fixture
 def settings() -> Settings:
-    return Settings(environment="test", database_url="sqlite://", supabase_url="", supabase_jwt_secret=TEST_SECRET)
+    return Settings(
+        environment="test", database_url="sqlite://", supabase_url="", supabase_jwt_secret=TEST_SECRET,
+        platform_admin_emails=["ops@costpilot.test"], ingestion_token="cron-secret",
+    )
 
 
 @pytest.fixture
@@ -35,12 +38,20 @@ def session_factory() -> Iterator[sessionmaker[Session]]:
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
     with factory() as s:
-        s.add(
-            Commodity(
-                code="lemon_juice_concentrate", name="Lemon Juice Concentrate",
-                category="Fruit juice concentrates", default_unit="kg", default_currency="EUR",
-            )
+        lemon = Commodity(
+            code="lemon_juice_concentrate", name="Lemon Juice Concentrate",
+            category="Fruit juice concentrates", default_unit="kg", default_currency="EUR",
         )
+        s.add(lemon)
+        s.flush()
+        # reference data normally created by migration 0004
+        s.add_all([
+            DataSource(name="Eurostat Comext (DS-045409)", source_type=SourceType.official_statistics,
+                       license_reference="(c) European Union, Eurostat", update_frequency="monthly"),
+            DataSource(name="Manual upload", source_type=SourceType.manual_upload),
+            ProductSpec(commodity_id=lemon.id, unit_of_measure="kg",
+                        specification_name="CN 20093939 - single citrus juice, Brix 20-67, > 30 EUR/100 kg, no added sugar"),
+        ])
         s.commit()
     yield factory
     engine.dispose()

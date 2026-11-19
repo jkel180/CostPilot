@@ -28,14 +28,15 @@ export async function apiFetch<T>(path: string, { method = "GET", body, orgId }:
 
   const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
   if (orgId) headers["X-Organization-Id"] = orgId;
-  if (body !== undefined) headers["Content-Type"] = "application/json";
+  const isForm = typeof FormData !== "undefined" && body instanceof FormData;
+  if (body !== undefined && !isForm) headers["Content-Type"] = "application/json";
 
   let res: Response;
   try {
     res = await fetch(`${API_URL}/api/v1${path}`, {
       method,
       headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : isForm ? (body as FormData) : JSON.stringify(body),
       cache: "no-store",
     });
   } catch {

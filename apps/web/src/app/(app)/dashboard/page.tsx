@@ -1,9 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/app-shell";
+import { ChartFrame, SERIES_COLORS, SeriesTable, TimeLineChart } from "@/components/charts";
 import { useOrg } from "@/components/org-context";
 import { Alert, Badge, Card, EmptyState } from "@/components/ui";
+import { fmtPct } from "@/lib/format";
 import type { DashboardSummary, Kpi } from "@/lib/types";
 
 const KIND_TONE = { observed: "neutral", forecast: "accent", calculated: "positive" } as const;
@@ -23,12 +26,19 @@ function KpiCard({ kpi }: { kpi: Kpi }) {
       </div>
       {available ? (
         <>
-          <p className="mt-2 text-2xl font-semibold tracking-tight">
-            {Number(kpi.value).toLocaleString("en-GB", { maximumFractionDigits: 2 })}
-            <span className="ml-1 text-sm font-normal text-muted">
-              {kpi.currency}/{kpi.unit}
-            </span>
+          <p className="mt-2 text-2xl font-semibold tracking-tight tabular-nums">
+            {kpi.unit === "%" ? (
+              fmtPct(kpi.value)
+            ) : (
+              <>
+                {Number(kpi.value).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                <span className="ml-1 text-sm font-normal text-muted">
+                  {kpi.currency}/{kpi.unit}
+                </span>
+              </>
+            )}
           </p>
+          {kpi.note && <p className="mt-1 text-[11px] leading-snug text-muted">{kpi.note}</p>}
           {kpi.provenance && (
             <p className="mt-auto pt-2 text-[11px] text-subtle">
               {kpi.provenance.source_name} · {formatDate(kpi.provenance.observation_date)}
@@ -79,6 +89,9 @@ export default function DashboardPage() {
   }, [current.organization_id]);
 
   const ds = data?.data_status;
+  const bench = data
+    ? [{ key: "b", label: "Extra-EU imports", color: SERIES_COLORS[0], points: data.benchmark_series.map((p) => ({ date: p.date, value: Number(p.value) })) }]
+    : [];
   return (
     <>
       <PageHeader
@@ -110,15 +123,39 @@ export default function DashboardPage() {
       </section>
 
       <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <ChartPanel title="Historical Price Trend" empty="Appears once validated market observations are imported (Sprint 2)." />
+        {data && data.benchmark_series.length > 0 ? (
+          <ChartFrame
+            title="Historical Price Trend (EUR/kg)"
+            table={<SeriesTable series={bench} valueFormat={(v) => `€${v.toFixed(2)}`} />}
+            caption={
+              <>
+                {data.benchmark_label}, last {data.benchmark_series.length} validated months. Source: Eurostat Comext.{" "}
+                <Link href="/market" className="text-accent hover:underline">Market details</Link>
+              </>
+            }
+          >
+            <TimeLineChart series={bench} valueFormat={(v) => `€${v.toFixed(2)}`} height={224} />
+          </ChartFrame>
+        ) : (
+          <ChartPanel title="Historical Price Trend" empty="Appears once validated market observations are imported." />
+        )}
         <ChartPanel title="Forecast vs Historical Price" empty="Appears once forecasts pass backtesting against baselines (Sprint 3)." />
-        <ChartPanel title="Market vs Customer Price" empty="Compares your purchase prices with benchmarks of the same specification." />
+        <ChartPanel title="Market vs Customer Price" empty="Arrives in Sprint 3, with explicit rules for comparing your prices with a customs benchmark (different specification and delivery terms)." />
         <ChartPanel title="Cost Impact Scenarios" empty="Appears once a cost model with your expected volumes is set up (Sprint 3)." />
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-4">
         <Card title="Market Overview">
-          <EmptyState title="No market overview yet">Built from validated observations and documented sources.</EmptyState>
+          {data && data.benchmark_series.length > 0 ? (
+            <div className="space-y-2 text-sm">
+              <p className="text-muted">
+                EU import unit value for the latest month and its change. Origins, volumes and sources are on the market page.
+              </p>
+              <Link href="/market" className="inline-block font-medium text-accent hover:underline">Open Market Intelligence →</Link>
+            </div>
+          ) : (
+            <EmptyState title="No market overview yet">Built from validated observations and documented sources.</EmptyState>
+          )}
         </Card>
         <Card title="Latest Insights">
           <EmptyState title="No insights yet">AI explanations use only CostPilot data and cite their sources.</EmptyState>

@@ -1,0 +1,27 @@
+# Monthly Eurostat Comext import, run against the deployed API.
+# Needs, in GitHub > Settings > Secrets and variables > Actions:
+#   secret   INGESTION_TOKEN  (same value as INGESTION_TOKEN on Render)
+#   variable API_URL          (e.g. https://costpilot-api-1lco.onrender.com)
+name: Ingest Eurostat Comext
+
+on:
+  schedule:
+    - cron: "0 6 20 * *" # 20th of each month, 06:00 UTC (Comext publishes mid-month)
+  workflow_dispatch: {}
+
+permissions: {}
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Wake the API (free Render instances sleep)
+        run: curl -fsS --retry 5 --retry-delay 15 --retry-all-errors "${{ vars.API_URL }}/health"
+      - name: Run the Comext connector
+        env:
+          TOKEN: ${{ secrets.INGESTION_TOKEN }}
+        run: |
+          curl -fsS --max-time 300 -X POST \
+            -H "X-Ingestion-Token: $TOKEN" \
+            "${{ vars.API_URL }}/api/v1/admin/scheduled-ingestion/eurostat_comext"

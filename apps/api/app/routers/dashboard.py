@@ -1,30 +1,78 @@
 """Main dashboard summary.
 
-Sprint 1 skeleton: the KPI slots and data-update status are real queries, but every
-KPI stays ``not_available`` until the corresponding pipeline exists (market data in
-Sprint 2, forecasts / purchase analytics / cost model in Sprint 3). The API never
-fabricates a value to fill a slot.
+Each KPI is either backed by stored data (with provenance) or explicitly
+``not_available`` with the reason. The API never fabricates a value to fill a slot.
 """
+
+from datetime import date, timedelta
 
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import func, select
 
+from app import market
 from app.deps import DbSession, OrgCtx
-from app.models import Alert, Commodity, CustomerPurchase, DataSource, MarketObservation
-from app.schemas import CommodityOut, DashboardSummary, DataStatus, Kpi
+from app.models import Alert, Commodity, CustomerPurchase, DataSource, MarketObservation, ObservationDataType
+from app.purchases import group_wapp
+from app.schemas import CommodityOut, DashboardSummary, DataStatus, Kpi, Provenance, SeriesPoint
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 DEFAULT_COMMODITY = "lemon_juice_concentrate"
 
-KPI_SLOTS: list[tuple[str, str, str]] = [
-    ("current_market_benchmark", "Current Market Benchmark", "Market data ingestion arrives in Sprint 2."),
-    ("monthly_price_change", "Monthly Price Change", "Market data ingestion arrives in Sprint 2."),
-    ("forecast_3m", "3-Month Forecast", "Forecasting pipeline with backtesting arrives in Sprint 3."),
-    ("forecast_6m", "6-Month Forecast", "Forecasting pipeline with backtesting arrives in Sprint 3."),
-    ("customer_avg_purchase_price", "Customer Average Purchase Price", "Purchase CSV import arrives in Sprint 2; WAPP in Sprint 3."),
-    ("estimated_cost_exposure", "Estimated Cost Exposure", "Cost model arrives in Sprint 3."),
-]
+
+def _benchmark_kpis(db, com) -> list[Kpi]:
+    b = market.benchmark(db, com)
+    if b is None:
+        reason = "No validated market observations yet."
+        return [
+            Kpi(key="current_market_benchmark", label="Current Market Benchmark", status="not_available", reason=reason),
+            Kpi(key="monthly_price_change", label="Monthly Price Change", status="not_available", reason=reason),
+        ]
+    o, src = b["observation"], b["source"]
+    prov = Provenance(
+        source_id=src.id, source_name=src.name, data_type=o.data_type, observation_date=o.observation_date,
+        collected_at=o.collected_at, is_synthetic=src.is_synthetic,
+    )
+    scope = "EU import unit value from outside the EU (customs), not a spot price"
+    if b["spec"]:
+        scope += f" · {b['spec'].specification_name.split(' - ')[0]}"
+    kpis = [
+        Kpi(key="current_market_benchmark", label="Current Market Benchmark", status="available", value=o.value,
+            unit=o.unit, currency=o.currency, value_kind="observed", provenance=prov, note=scope)
+    ]
+    if b["mom_pct"] is None:
+        kpis.append(Kpi(key="monthly_price_change", label="Monthly Price Change", status="not_available",
+                        reason="No validated value for the previous month."))
+    else:
+        kpis.append(
+            Kpi(key="monthly_price_change", label="Monthly Price Change", status="available", value=b["mom_pct"],
+                unit="%", value_kind="calculated", provenance=prov,
+                note=f"{o.observation_date:%b %Y} vs {b['previous'].observation_date:%b %Y}")
+        )
+    return kpis
+
+
+def _customer_price_kpi(db, org_id, com) -> Kpi:
+    since = date.today() - timedelta(days=365)
+    ps = db.scalars(
+        select(CustomerPurchase).where(
+            CustomerPurchase.organization_id == org_id,
+            CustomerPurchase.commodity_id == com.id,
+            CustomerPurchase.purchase_date >= since,
+        )
+    ).all()
+    label = "Customer Average Purchase Price"
+    if not ps:
+        return Kpi(key="customer_avg_purchase_price", label=label, status="not_available",
+                   reason="No purchases in the last 12 months. Upload them in My Purchases.")
+    groups = group_wapp(ps, lambda p: "all")
+    if len(groups) > 1:
+        return Kpi(key="customer_avg_purchase_price", label=label, status="not_available",
+                   reason="Purchases use different units or currencies; see My Purchases for each group.")
+    g = groups[0]
+    return Kpi(key="customer_avg_purchase_price", label=label, status="available", value=g["weighted_avg_price"],
+               unit=g["unit"], currency=g["currency"], value_kind="calculated",
+               note=f"Weighted average of {g['purchases']} purchases, last 12 months")
 
 
 @router.get("/summary", response_model=DashboardSummary)
@@ -52,7 +100,14 @@ def dashboard_summary(
         )
         or 0
     ) > 0
-    active_sources = db.scalar(select(func.count(DataSource.id)).where(DataSource.active.is_(True))) or 0
+    active_sources = (
+        db.scalar(
+            select(func.count(func.distinct(MarketObservation.source_id))).where(
+                MarketObservation.commodity_id == com.id
+            )
+        )
+        or 0
+    )
 
     org_id = ctx.organization.id
     purchase_count, latest_purchase = db.execute(
@@ -69,10 +124,24 @@ def dashboard_summary(
         or 0
     )
 
+    forecast_reason = "Forecasting pipeline with backtesting arrives in Sprint 3."
+    kpis = [
+        *_benchmark_kpis(db, com),
+        Kpi(key="forecast_3m", label="3-Month Forecast", status="not_available", reason=forecast_reason),
+        Kpi(key="forecast_6m", label="6-Month Forecast", status="not_available", reason=forecast_reason),
+        _customer_price_kpi(db, org_id, com),
+        Kpi(key="estimated_cost_exposure", label="Estimated Cost Exposure", status="not_available",
+            reason="Cost model arrives in Sprint 3."),
+    ]
+
+    bench_pts = market.series(db, com, ObservationDataType.customs_unit_value, [market.BENCHMARK_GEOGRAPHY]).get(
+        market.BENCHMARK_GEOGRAPHY, []
+    )[-36:]
+
     return DashboardSummary(
         commodity=CommodityOut.model_validate(com),
         organization_currency=ctx.organization.currency,
-        kpis=[Kpi(key=k, label=label, status="not_available", reason=reason) for k, label, reason in KPI_SLOTS],
+        kpis=kpis,
         data_status=DataStatus(
             market_observations=obs_count,
             latest_observation_date=latest_obs,
@@ -83,4 +152,8 @@ def dashboard_summary(
             latest_purchase_date=latest_purchase,
         ),
         active_alerts=active_alerts,
+        benchmark_series=[
+            SeriesPoint(date=p.observation_date, value=p.value, quality_status=p.quality_status.value) for p in bench_pts
+        ],
+        benchmark_label=market.BENCHMARK_LABEL if bench_pts else None,
     )

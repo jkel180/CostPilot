@@ -21,6 +21,21 @@ Database e autenticazione: **Supabase** (PostgreSQL gestito + Supabase Auth).
 - [x] Skeleton della dashboard (KPI, grafici, stato dati) — nessun valore inventato: ogni KPI resta "non disponibile" finché la pipeline relativa non esiste
 - [x] Test automatici su autenticazione, ruoli, isolamento tra organizzazioni, migrazioni
 
+## Sprint 2 — Market Data
+
+- [x] Framework di ingestion con interfaccia comune (`fetch_data → validate_data → normalize_data → save_data → log_execution`), log di ogni esecuzione (`ingestion_runs`) e `data_version` (hash dei dati salvati)
+- [x] Connettore **Eurostat Comext** (DS-045409): valore unitario all'import UE (EUR/kg) e volumi per origine, dal 2019
+- [x] Upload manuale CSV di osservazioni di mercato (solo platform admin, con fonte originale obbligatoria)
+- [x] Import CSV acquisti: mapping colonne (nomi italiani/inglesi), validazione per riga, anteprima, import parziale, annullamento
+- [x] Analisi acquisti: prezzo medio ponderato (WAPP) per fornitore, prodotto e mese, mai mescolando unità o valute
+- [x] Pagine Market Intelligence e My Purchases, grafici storici in dashboard, provenienza e date di aggiornamento visibili
+
+**Cosa misura il benchmark.** Il lemon concentrate ai prezzi di mercato è dichiarato in dogana sotto **CN 20093939** ("succo di un solo agrume, Brix 20–67, > 30 €/100 kg, senza zuccheri aggiunti"). Il codice non è solo limone (include altri agrumi esclusi arancia e pompelmo): i codici CN specifici per il limone esistono solo per la fascia ≤ 30 €/100 kg, che non corrisponde ai prezzi del concentrato. È un valore doganale medio, non un prezzo spot o contrattuale, ed è etichettato così ovunque.
+
+**Regole di qualità** (deterministiche): senza valore o quantità → scartato; volume mensile < 50 t → `unvalidated`; valore unitario oltre 3× o sotto 1/3 della mediana della serie → `rejected`; altrimenti `validated`. Grafici e KPI usano solo i mesi `validated`.
+
+**Aggiornamento.** Un workflow GitHub Actions (`.github/workflows/ingest-eurostat.yml`) lancia l'import il 20 di ogni mese; un platform admin può lanciarlo anche dalla pagina Market Intelligence.
+
 ## Modello di sicurezza
 
 1. **Backend (barriera principale).** Ogni richiesta verifica il JWT Supabase (firma, scadenza, audience, issuer). Le API sui dati cliente richiedono l'header `X-Organization-Id`, controllano che l'utente sia membro dell'organizzazione e filtrano ogni query per `organization_id`. Un'organizzazione di cui non si è membri risponde `404`, così non si rivela che esiste.
@@ -44,6 +59,8 @@ Un utente può appartenere a più organizzazioni (tabella `memberships`, che sos
    - `DATABASE_URL`: la stringa del Session pooler Supabase con prefisso `postgresql+psycopg://` (password URL-encoded).
    - `SUPABASE_URL`: `https://<project-ref>.supabase.co`
    - `CORS_ORIGINS`: per ora `http://localhost:3000`; dopo il passo 2 diventa `https://<app>.vercel.app` (più indirizzi separati da virgola).
+   - `PLATFORM_ADMIN_EMAILS`: email degli operatori CostPilot che gestiscono i dati di mercato condivisi.
+   - `INGESTION_TOKEN`: segreto lungo e casuale per l'import mensile automatico (vedi sotto).
 3. A deploy finito, `https://<servizio>.onrender.com/health` risponde `{"status":"ok"}`.
 
 Il piano gratuito di Render sospende il servizio dopo 15 minuti di inattività: la prima richiesta successiva impiega ~1 minuto.
@@ -62,6 +79,14 @@ Il piano gratuito di Render sospende il servizio dopo 15 minuti di inattività: 
 
 - Render → servizio → *Environment*: `CORS_ORIGINS` = `https://<app>.vercel.app`.
 - Supabase → *Authentication → URL Configuration*: Site URL `https://<app>.vercel.app`, Redirect URL `https://<app>.vercel.app/auth/callback`.
+
+### 4. Import mensile Eurostat (GitHub Actions)
+
+GitHub → repository → *Settings → Secrets and variables → Actions*:
+- *Secrets*: `INGESTION_TOKEN` = lo stesso valore impostato su Render.
+- *Variables*: `API_URL` = `https://<servizio>.onrender.com`.
+
+Il workflow gira il 20 di ogni mese; si può lanciare a mano da *Actions → Ingest Eurostat Comext → Run workflow*.
 
 Le variabili `NEXT_PUBLIC_*` sono incluse nel build: dopo averle cambiate su Vercel serve un *Redeploy*.
 

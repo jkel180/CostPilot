@@ -96,6 +96,12 @@ class QualityStatus(str, enum.Enum):
     rejected = "rejected"
 
 
+class RunStatus(str, enum.Enum):
+    running = "running"
+    success = "success"
+    failed = "failed"
+
+
 class ForecastQualityStatus(str, enum.Enum):
     reliable = "reliable"  # beats the baseline in backtesting
     below_baseline = "below_baseline"  # must not be presented as a reliable forecast
@@ -257,6 +263,12 @@ class MarketObservation(CreatedAtMixin, Base):
     quality_status: Mapped[QualityStatus] = mapped_column(
         _enum(QualityStatus, "quality_status"), nullable=False, default=QualityStatus.unvalidated
     )
+    quality_note: Mapped[str | None] = mapped_column(String(200))
+    # Source-specific provenance, e.g. reporter, CN code, raw value and quantity, geography label.
+    attributes: Mapped[dict[str, Any]] = mapped_column(JSONType, nullable=False, default=dict)
+    ingestion_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("ingestion_runs.id", ondelete="SET NULL")
+    )
 
 
 class Forecast(CreatedAtMixin, Base):
@@ -350,8 +362,57 @@ class CustomerPurchase(TimestampMixin, Base):
     contract_type: Mapped[str | None] = mapped_column(String(50))
     packaging: Mapped[str | None] = mapped_column(String(100))
     certification: Mapped[str | None] = mapped_column(String(200))
-    import_batch_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, index=True)
+    import_batch_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("purchase_imports.id", ondelete="CASCADE"), index=True
+    )
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+
+
+class PurchaseImport(CreatedAtMixin, Base):
+    """One CSV upload. Deleting it removes the purchases it created."""
+
+    __tablename__ = "purchase_imports"
+    __table_args__ = (Index("ix_purchase_import_org_created", "organization_id", "created_at"),)
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    commodity_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("commodities.id", ondelete="RESTRICT"), nullable=False
+    )
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    rows_total: Mapped[int] = mapped_column(Integer, nullable=False)
+    rows_imported: Mapped[int] = mapped_column(Integer, nullable=False)
+    rows_skipped: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    column_mapping: Mapped[dict[str, Any]] = mapped_column(JSONType, nullable=False)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+
+
+class IngestionRun(Base):
+    """Execution log of a market-data connector (``log_execution``)."""
+
+    __tablename__ = "ingestion_runs"
+    __table_args__ = (Index("ix_ingestion_run_source_started", "source_id", "started_at"),)
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    source_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("data_sources.id", ondelete="RESTRICT"), nullable=False
+    )
+    commodity_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("commodities.id", ondelete="RESTRICT"), nullable=False
+    )
+    connector: Mapped[str] = mapped_column(String(50), nullable=False)
+    status: Mapped[RunStatus] = mapped_column(_enum(RunStatus, "run_status"), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    rows_fetched: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    rows_saved: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    rows_rejected: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    parameters: Mapped[dict[str, Any]] = mapped_column(JSONType, nullable=False, default=dict)
+    data_version: Mapped[str | None] = mapped_column(String(64))  # sha256 of the normalized rows
+    error: Mapped[str | None] = mapped_column(Text)
+    triggered_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
 
 
 class CostModel(TimestampMixin, Base):
@@ -431,13 +492,16 @@ class AuditLog(CreatedAtMixin, Base):
 
 
 #: Tables that hold customer data and must be isolated per organization.
-TENANT_TABLES = ("memberships", "customer_purchases", "cost_models", "alerts", "ai_reports", "audit_logs")
+TENANT_TABLES = (
+    "memberships", "customer_purchases", "purchase_imports", "cost_models", "alerts", "ai_reports", "audit_logs",
+)
 #: Shared reference / market tables (no customer data).
 REFERENCE_TABLES = (
     "commodities",
     "product_specs",
     "data_sources",
     "market_observations",
+    "ingestion_runs",
     "forecasts",
     "forecast_backtests",
 )

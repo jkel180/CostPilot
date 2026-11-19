@@ -115,5 +115,15 @@ def require_role(*roles: Role) -> Callable[[OrgContext], OrgContext]:
     return checker
 
 
+def get_platform_admin(
+    user: CurrentUser, settings: Annotated[Settings, Depends(get_settings)]
+) -> User:
+    if not settings.is_platform_admin(user.email):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only CostPilot platform administrators can manage market data")
+    return user
+
+
+PlatformAdmin = Annotated[User, Depends(get_platform_admin)]
+
 AdminCtx = Annotated[OrgContext, Depends(require_role(Role.admin))]
 EditorCtx = Annotated[OrgContext, Depends(require_role(Role.admin, Role.analyst))]
