@@ -24,8 +24,14 @@ def create_app() -> FastAPI:
     )
 
     @app.get("/health", tags=["health"])
-    def health() -> dict[str, str]:
-        return {"status": "ok", "environment": settings.environment}
+    def health() -> dict[str, str | int | bool]:
+        # configuration presence only (counts/flags), never values
+        return {
+            "status": "ok",
+            "environment": settings.environment,
+            "platform_admins_configured": len(settings.platform_admin_emails),
+            "scheduled_ingestion_enabled": bool(settings.ingestion_token),
+        }
 
     for r in (me.router, organizations.router, commodities.router, dashboard.router, market.router,
               purchases.router, admin.router):
