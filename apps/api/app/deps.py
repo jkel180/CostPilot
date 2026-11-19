@@ -16,6 +16,7 @@ from typing import Annotated
 from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth import AuthError, verify_access_token
@@ -41,14 +42,26 @@ def get_current_user(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(exc)) from exc
 
     # Provision the application profile on first sight of a Supabase user.
-    user = db.get(User, token_user.id)
     now = datetime.now(UTC)
+    user = db.get(User, token_user.id)
     if user is None:
-        user = User(id=token_user.id, email=token_user.email, last_seen_at=now)
-        db.add(user)
-    else:
-        user.email = token_user.email
-        user.last_seen_at = now
+        db.add(User(id=token_user.id, email=token_user.email, last_seen_at=now))
+        try:
+            db.commit()
+        except IntegrityError:
+            # A parallel request (e.g. two calls on first page load) created it first.
+            db.rollback()
+        user = db.get(User, token_user.id)
+        if user is None:
+            # The email belongs to a different auth id (account deleted and re-created in Supabase).
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "This email is linked to another CostPilot profile. Contact your administrator.",
+            )
+        return user
+
+    user.email = token_user.email
+    user.last_seen_at = now
     db.commit()
     return user
 
