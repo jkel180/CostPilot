@@ -24,8 +24,10 @@ STALE_RUNNING = timedelta(minutes=30)
 
 
 def _label(name: str) -> str:
+    from app.forecasting.pooled import LABELS
+
     m = BY_NAME.get(name)
-    return m.label if m else name
+    return m.label if m else LABELS.get(name, name)
 
 
 def _aware(dt: datetime) -> datetime:

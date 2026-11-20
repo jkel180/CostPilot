@@ -259,3 +259,12 @@ def test_input_version_covers_support_series():
     panel2 = {**panel, "C0:EXT_EU27_2020": [(d, v * 1.01) for d, v in panel["C0:EXT_EU27_2020"]]}
     assert a != pipeline.input_version(s, pipeline._align_panel(s, panel2))
     assert pipeline.input_version(s, {}) == s.data_version
+
+
+def test_every_model_has_a_readable_label():
+    from app.forecasting.read import _label
+
+    bench, panel = _panel()
+    r = run_pipeline(bench, models=registry.MODELS[:2], panel_points=panel)
+    for m in {m.model for m in r.metrics}:
+        assert _label(m) != m, m

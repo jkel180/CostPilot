@@ -23,6 +23,10 @@ import numpy as np
 from app.forecasting.models import ForecastModel, BY_NAME
 
 ALPHA = 10.0
+LABELS = {
+    "pooled": "Pooled regression across EU import series",
+    "ets_pooled": "Ensemble (ETS + pooled regression)",
+}
 MIN_PAIRS = 30
 MIN_PANEL_MONTHS = 60
 
@@ -85,7 +89,7 @@ def make_pooled_models(dates: list[date], panel: dict[str, np.ndarray]) -> tuple
         return (BY_NAME["ets"].fn(history, h) + pooled(history, h)) / 2
 
     return (
-        ForecastModel("pooled", "Pooled regression across EU import series", False, 36, pooled),
-        ForecastModel("ets_pooled", "Ensemble (ETS + pooled regression)", False, 36, ets_pooled,
+        ForecastModel("pooled", LABELS["pooled"], False, 36, pooled),
+        ForecastModel("ets_pooled", LABELS["ets_pooled"], False, 36, ets_pooled,
                       components=("ets", "pooled")),
     )
