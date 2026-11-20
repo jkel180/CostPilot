@@ -271,6 +271,42 @@ class MarketObservation(CreatedAtMixin, Base):
     )
 
 
+class ForecastRun(Base):
+    """One execution of the forecasting pipeline: inputs, versions and outcome.
+
+    A run is reproducible from ``input_data_version`` (hash of the exact series used)
+    and ``model_version`` (pipeline + library versions); ``settings`` holds every
+    parameter the pipeline used.
+    """
+
+    __tablename__ = "forecast_runs"
+    __table_args__ = (Index("ix_forecast_run_commodity_generated", "commodity_id", "generated_at"),)
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    commodity_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("commodities.id", ondelete="RESTRICT"), nullable=False
+    )
+    product_spec_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("product_specs.id", ondelete="RESTRICT")
+    )
+    series_geography: Mapped[str] = mapped_column(String(100), nullable=False)
+    series_data_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)  # success | insufficient_data | failed
+    input_data_version: Mapped[str | None] = mapped_column(String(64))
+    model_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    n_observations: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    first_date: Mapped[date | None] = mapped_column(Date)
+    last_date: Mapped[date | None] = mapped_column(Date)
+    last_value: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
+    currency: Mapped[str | None] = mapped_column(String(3))
+    unit: Mapped[str | None] = mapped_column(String(30))
+    settings: Mapped[dict[str, Any]] = mapped_column(JSONType, nullable=False, default=dict)
+    notes: Mapped[list[Any]] = mapped_column(JSONType, nullable=False, default=list)
+    error: Mapped[str | None] = mapped_column(Text)
+    triggered_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+
+
 class Forecast(CreatedAtMixin, Base):
     __tablename__ = "forecasts"
     __table_args__ = (
@@ -302,6 +338,8 @@ class Forecast(CreatedAtMixin, Base):
     quality_status: Mapped[ForecastQualityStatus] = mapped_column(
         _enum(ForecastQualityStatus, "forecast_quality_status"), nullable=False
     )
+    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("forecast_runs.id", ondelete="CASCADE"), index=True)
+    interval_level: Mapped[Decimal | None] = mapped_column(Numeric(4, 2))  # e.g. 0.80
 
 
 class ForecastBacktest(CreatedAtMixin, Base):
@@ -322,6 +360,10 @@ class ForecastBacktest(CreatedAtMixin, Base):
     directional_accuracy: Mapped[Decimal | None] = mapped_column(Numeric(6, 4))
     interval_coverage: Mapped[Decimal | None] = mapped_column(Numeric(6, 4))
     benchmark_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("forecast_runs.id", ondelete="CASCADE"), index=True)
+    n_origins: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    is_baseline: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    selected: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
 # --------------------------------------------------------------------------- customer data
@@ -419,7 +461,9 @@ class CostModel(TimestampMixin, Base):
     __tablename__ = "cost_models"
     __table_args__ = (
         CheckConstraint("expected_volume >= 0", name="ck_cost_model_volume"),
-        Index("ix_cost_model_org", "organization_id", "commodity_id"),
+        CheckConstraint("current_purchase_price >= 0", name="ck_cost_model_price"),
+        CheckConstraint("pass_through_pct >= 0 AND pass_through_pct <= 200", name="ck_cost_model_pass_through"),
+        UniqueConstraint("organization_id", "commodity_id", name="uq_cost_model_org_commodity"),
     )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
@@ -439,6 +483,9 @@ class CostModel(TimestampMixin, Base):
     target_purchase_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     unit: Mapped[str] = mapped_column(String(20), nullable=False)
+    # share of a benchmark % change passed on to the customer's price (100 = fully proportional)
+    pass_through_pct: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False, default=Decimal(100))
+    commodity_cost_share_pct: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
     assumptions_json: Mapped[dict[str, Any]] = mapped_column(JSONType, nullable=False, default=dict)
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
 
@@ -497,6 +544,7 @@ TENANT_TABLES = (
 )
 #: Shared reference / market tables (no customer data).
 REFERENCE_TABLES = (
+    "forecast_runs",
     "commodities",
     "product_specs",
     "data_sources",

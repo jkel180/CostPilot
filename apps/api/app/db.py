@@ -23,3 +23,8 @@ def get_db() -> Iterator[Session]:
         yield session
     finally:
         session.close()
+
+
+def get_session_factory() -> sessionmaker[Session]:
+    """Dependency for work that outlives the request (background tasks)."""
+    return get_sessionmaker()

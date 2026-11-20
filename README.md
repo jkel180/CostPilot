@@ -36,6 +36,24 @@ Database e autenticazione: **Supabase** (PostgreSQL gestito + Supabase Auth).
 
 **Aggiornamento.** Un workflow GitHub Actions (`.github/workflows/ingest-eurostat.yml`) lancia l'import il 20 di ogni mese; un platform admin può lanciarlo anche dalla pagina Market Intelligence.
 
+## Sprint 3 — Analytics
+
+- [x] Pipeline di forecasting riproducibile (1/3/6 mesi) sul benchmark Eurostat: naive, seasonal naive, exponential smoothing (con e senza stagionalità), ARIMA (ordine scelto per AIC), ensemble ETS+ARIMA
+- [x] Backtesting rolling-origin su 36 origini: ogni previsione usa solo i dati disponibili a quella data (test automatico anti look-ahead)
+- [x] Metriche: MAE, WAPE, directional accuracy, copertura degli intervalli; un modello viene usato **solo se batte la miglior baseline**, altrimenti la previsione è marcata `below_baseline` e mostrata come "nessuna variazione"
+- [x] Intervalli di previsione all'80% empirici (quantile degli errori di backtest); scenari prezzi più bassi / base / più alti = estremi dell'intervallo e previsione centrale, non generati da un LLM
+- [x] Ogni run salva `input_data_version` (hash della serie usata), `model_version` (pipeline + librerie) e parametri: stesso input → stessa previsione
+- [x] Cost model per organizzazione (volumi, prezzo attuale e target, pass-through, quota di costo) e Cost Simulator (WAPP, impatto sul periodo, annualizzato, risparmi)
+- [x] Dashboard: KPI previsioni 3/6 mesi, esposizione di costo, grafici Forecast vs storico, Mercato vs prezzo cliente, scenari di impatto
+
+**Regole di confronto.** Prezzo cliente e benchmark si confrontano solo in EUR/kg; tonnellate e libbre convertite con fattori fissi; altre valute e unità di volume (che richiederebbero una densità dipendente dal Brix) sono escluse e segnalate. Il gap è indicativo: il benchmark è un valore doganale di un codice più ampio.
+
+**Formule (spec 3.4).** variazione prezzo = variazione benchmark × pass-through; impatto periodo = (prezzo scenario − prezzo attuale) × quantità; annualizzato = impatto mensile × 12.
+
+**XGBoost** non è usato: con ~90 osservazioni mensili un modello ad albero non è giustificato dai dati.
+
+La previsione viene ricalcolata in background dopo ogni import Eurostat riuscito (manuale o mensile); un platform admin può lanciarla anche dalla pagina Forecasting.
+
 ## Modello di sicurezza
 
 1. **Backend (barriera principale).** Ogni richiesta verifica il JWT Supabase (firma, scadenza, audience, issuer). Le API sui dati cliente richiedono l'header `X-Organization-Id`, controllano che l'utente sia membro dell'organizzazione e filtrano ogni query per `organization_id`. Un'organizzazione di cui non si è membri risponde `404`, così non si rivela che esiste.

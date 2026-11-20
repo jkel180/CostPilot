@@ -153,6 +153,7 @@ class Kpi(BaseModel):
     provenance: Provenance | None = None
     reason: str | None = None
     note: str | None = None  # scope or caveat shown under the value
+    quality: str | None = None  # forecasts: reliable | below_baseline
 
 
 class DataStatus(BaseModel):
@@ -173,6 +174,11 @@ class DashboardSummary(BaseModel):
     active_alerts: int
     benchmark_series: list["SeriesPoint"] = []
     benchmark_label: str | None = None
+    forecast_points: list["ForecastPointOut"] = []
+    customer_series: list["SeriesPoint"] = []  # monthly weighted avg in EUR/kg, when convertible
+    customer_series_note: str | None = None
+    cost_scenarios: list["SimScenario"] = []
+    cost_scenarios_months: int | None = None
 
 
 # --------------------------------------------------------------------------- market data
@@ -340,6 +346,165 @@ class PurchaseAnalysis(BaseModel):
     by_supplier: list[WappGroup]
     by_product: list[WappGroup]
     by_month: list[WappGroup]
+
+
+
+
+# --------------------------------------------------------------------------- forecasts
+
+
+class ForecastPointOut(BaseModel):
+    horizon_months: int
+    target_date: date
+    value: Decimal
+    lower: Decimal
+    upper: Decimal
+    interval_level: Decimal | None
+    model: str
+    model_label: str
+    quality: str  # reliable | below_baseline | insufficient_data
+    baseline: str | None
+    model_mae: Decimal | None
+    baseline_mae: Decimal | None
+    improvement_pct: Decimal | None  # MAE reduction vs best baseline
+
+
+class BacktestOut(BaseModel):
+    model: str
+    model_label: str
+    horizon_months: int
+    is_baseline: bool
+    selected: bool
+    n_origins: int
+    mae: Decimal | None
+    wape: Decimal | None
+    directional_accuracy: Decimal | None
+    interval_coverage: Decimal | None
+
+
+class ScenarioOut(BaseModel):
+    key: str  # downside | base | upside
+    label: str
+    horizon_months: int
+    price: Decimal
+    change_pct: Decimal
+    assumption: str
+
+
+class ForecastRunOut(BaseModel):
+    id: uuid.UUID
+    status: str
+    generated_at: datetime
+    input_data_version: str | None
+    model_version: str
+    n_observations: int
+    first_date: date | None
+    last_date: date | None
+    last_value: Decimal | None
+    currency: str | None
+    unit: str | None
+    notes: list
+    settings: dict
+    error: str | None
+
+
+class ForecastBundle(BaseModel):
+    run: ForecastRunOut | None
+    running: bool
+    series_label: str
+    scope: str | None
+    history: list[SeriesPoint]
+    forecasts: list[ForecastPointOut]
+    backtests: list[BacktestOut]
+    scenarios: list[ScenarioOut]
+
+
+# --------------------------------------------------------------------------- cost model & simulator
+
+
+class CostModelIn(BaseModel):
+    name: str = Field(default="Lemon juice concentrate", min_length=1, max_length=200)
+    expected_volume: Decimal = Field(gt=0, max_digits=18, decimal_places=4)
+    volume_period: Literal["monthly", "annual"] = "annual"
+    current_purchase_price: Decimal = Field(gt=0, max_digits=18, decimal_places=6)
+    target_purchase_price: Decimal | None = Field(default=None, gt=0, max_digits=18, decimal_places=6)
+    currency: str = Field(default="EUR", min_length=3, max_length=3)
+    unit: str = Field(default="kg", min_length=1, max_length=20)
+    pass_through_pct: Decimal = Field(default=Decimal(100), ge=0, le=200)
+    commodity_cost_share_pct: Decimal | None = Field(default=None, ge=0, le=100)
+    notes: str | None = Field(default=None, max_length=2000)
+
+    _currency = field_validator("currency")(_clean_currency)
+
+    @field_validator("unit")
+    @classmethod
+    def lower_unit(cls, v: str) -> str:
+        return v.strip().lower()
+
+
+class CostModelOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    expected_volume: Decimal
+    volume_period: str
+    current_purchase_price: Decimal
+    target_purchase_price: Decimal | None
+    currency: str
+    unit: str
+    pass_through_pct: Decimal
+    commodity_cost_share_pct: Decimal | None
+    notes: str | None
+    updated_at: datetime
+
+
+class SimulationRequest(BaseModel):
+    """Every field is optional: missing values come from the saved cost model."""
+
+    expected_volume: Decimal | None = Field(default=None, gt=0)
+    volume_period: Literal["monthly", "annual"] | None = None
+    current_purchase_price: Decimal | None = Field(default=None, gt=0)
+    pass_through_pct: Decimal | None = Field(default=None, ge=0, le=200)
+    months: int = Field(default=3, ge=1, le=12)
+    custom_changes_pct: list[Decimal] = Field(default_factory=lambda: [Decimal(-10), Decimal(10)], max_length=6)
+
+
+class SimScenario(BaseModel):
+    key: str
+    label: str
+    source: Literal["forecast", "custom"]
+    assumption: str
+    benchmark_change_pct: Decimal
+    price_change_pct: Decimal
+    scenario_price: Decimal
+    period_quantity: Decimal
+    expected_spend: Decimal
+    baseline_spend: Decimal
+    period_impact: Decimal
+    annualized_impact: Decimal
+    forecast_quality: str | None = None
+
+
+class MarketGap(BaseModel):
+    available: bool
+    customer_price_per_kg: Decimal | None = None
+    benchmark_per_kg: Decimal | None = None
+    benchmark_date: date | None = None
+    gap_pct: Decimal | None = None
+    rule: str
+
+
+class SimulationResult(BaseModel):
+    inputs: dict
+    inputs_source: Literal["cost_model", "request", "mixed"]
+    monthly_quantity: Decimal
+    currency: str
+    unit: str
+    months: int
+    market_gap: MarketGap
+    forecast_horizon_used: int | None
+    forecast_note: str | None
+    target_annual_savings: Decimal | None
+    scenarios: list[SimScenario]
 
 
 DashboardSummary.model_rebuild()

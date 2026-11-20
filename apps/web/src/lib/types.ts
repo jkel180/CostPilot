@@ -42,6 +42,7 @@ export type Kpi = {
   } | null;
   reason: string | null;
   note: string | null;
+  quality?: string | null;
 };
 
 export type DashboardSummary = {
@@ -60,6 +61,11 @@ export type DashboardSummary = {
   active_alerts: number;
   benchmark_series: SeriesPoint[];
   benchmark_label: string | null;
+  forecast_points: ForecastPoint[];
+  customer_series: SeriesPoint[];
+  customer_series_note: string | null;
+  cost_scenarios: SimScenario[];
+  cost_scenarios_months: number | null;
 };
 
 export const ROLE_LABEL: Record<Role, string> = { admin: "Admin", analyst: "Analyst", viewer: "Viewer" };
@@ -205,4 +211,126 @@ export type PurchaseAnalysis = {
   by_supplier: WappGroup[];
   by_product: WappGroup[];
   by_month: WappGroup[];
+};
+
+// ---------------------------------------------------------------- forecasts
+
+export type ForecastPoint = {
+  horizon_months: number;
+  target_date: string;
+  value: string;
+  lower: string;
+  upper: string;
+  interval_level: string | null;
+  model: string;
+  model_label: string;
+  quality: "reliable" | "below_baseline" | "insufficient_data";
+  baseline: string | null;
+  model_mae: string | null;
+  baseline_mae: string | null;
+  improvement_pct: string | null;
+};
+
+export type Backtest = {
+  model: string;
+  model_label: string;
+  horizon_months: number;
+  is_baseline: boolean;
+  selected: boolean;
+  n_origins: number;
+  mae: string | null;
+  wape: string | null;
+  directional_accuracy: string | null;
+  interval_coverage: string | null;
+};
+
+export type ForecastScenario = {
+  key: "downside" | "base" | "upside";
+  label: string;
+  horizon_months: number;
+  price: string;
+  change_pct: string;
+  assumption: string;
+};
+
+export type ForecastRunInfo = {
+  id: string;
+  status: string;
+  generated_at: string;
+  input_data_version: string | null;
+  model_version: string;
+  n_observations: number;
+  first_date: string | null;
+  last_date: string | null;
+  last_value: string | null;
+  currency: string | null;
+  unit: string | null;
+  notes: string[];
+  settings: Record<string, unknown>;
+  error: string | null;
+};
+
+export type ForecastBundle = {
+  run: ForecastRunInfo | null;
+  running: boolean;
+  series_label: string;
+  scope: string | null;
+  history: SeriesPoint[];
+  forecasts: ForecastPoint[];
+  backtests: Backtest[];
+  scenarios: ForecastScenario[];
+};
+
+// ---------------------------------------------------------------- cost model
+
+export type CostModel = {
+  id: string;
+  name: string;
+  expected_volume: string;
+  volume_period: "monthly" | "annual";
+  current_purchase_price: string;
+  target_purchase_price: string | null;
+  currency: string;
+  unit: string;
+  pass_through_pct: string;
+  commodity_cost_share_pct: string | null;
+  notes: string | null;
+  updated_at: string;
+};
+
+export type SimScenario = {
+  key: string;
+  label: string;
+  source: "forecast" | "custom";
+  assumption: string;
+  benchmark_change_pct: string;
+  price_change_pct: string;
+  scenario_price: string;
+  period_quantity: string;
+  expected_spend: string;
+  baseline_spend: string;
+  period_impact: string;
+  annualized_impact: string;
+  forecast_quality: string | null;
+};
+
+export type SimulationResult = {
+  inputs: Record<string, string | number>;
+  inputs_source: "cost_model" | "request" | "mixed";
+  monthly_quantity: string;
+  currency: string;
+  unit: string;
+  months: number;
+  market_gap: {
+    available: boolean;
+    customer_price_per_kg: string | null;
+    benchmark_per_kg: string | null;
+    benchmark_date: string | null;
+    gap_pct: string | null;
+    rule: string;
+  };
+  forecast_horizon_used: number | null;
+  forecast_note: string | null;
+  target_annual_savings: string | null;
+  scenarios: SimScenario[];
 };

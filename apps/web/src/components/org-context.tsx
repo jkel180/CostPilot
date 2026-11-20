@@ -11,7 +11,7 @@ type OrgState = {
   current: MembershipSummary;
   role: Role;
   /** Fetch scoped to the current organization. */
-  api: <T>(path: string, opts?: { method?: "GET" | "POST" | "PATCH" | "DELETE"; body?: unknown }) => Promise<T>;
+  api: <T>(path: string, opts?: { method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; body?: unknown }) => Promise<T>;
   switchOrg: (id: string) => void;
   reload: () => Promise<void>;
 };

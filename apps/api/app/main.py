@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.routers import admin, commodities, dashboard, market, me, organizations, purchases
+from app.routers import admin, commodities, cost, dashboard, forecasts, market, me, organizations, purchases
 
 
 def create_app() -> FastAPI:
@@ -19,7 +19,7 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_credentials=False,
-        allow_methods=["GET", "POST", "PATCH", "DELETE"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
         allow_headers=["Authorization", "Content-Type", "X-Organization-Id"],
     )
 
@@ -34,7 +34,7 @@ def create_app() -> FastAPI:
         }
 
     for r in (me.router, organizations.router, commodities.router, dashboard.router, market.router,
-              purchases.router, admin.router):
+              purchases.router, admin.router, forecasts.router, cost.router):
         app.include_router(r, prefix="/api/v1")
     return app
 

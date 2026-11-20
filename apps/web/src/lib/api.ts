@@ -15,7 +15,7 @@ export class ApiError extends Error {
   }
 }
 
-type Options = { method?: "GET" | "POST" | "PATCH" | "DELETE"; body?: unknown; orgId?: string | null };
+type Options = { method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; body?: unknown; orgId?: string | null };
 
 /** Call the CostPilot API with the user's Supabase access token and organization context. */
 export async function apiFetch<T>(path: string, { method = "GET", body, orgId }: Options = {}): Promise<T> {

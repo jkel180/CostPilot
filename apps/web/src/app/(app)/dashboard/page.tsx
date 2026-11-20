@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/app-shell";
 import { ChartFrame, SERIES_COLORS, SeriesTable, TimeLineChart } from "@/components/charts";
+import { ForecastChart, ImpactBars } from "@/components/forecast-charts";
 import { useOrg } from "@/components/org-context";
 import { Alert, Badge, Card, EmptyState } from "@/components/ui";
 import { fmtPct } from "@/lib/format";
@@ -22,13 +23,22 @@ function KpiCard({ kpi }: { kpi: Kpi }) {
     <div className="flex min-h-[124px] flex-col rounded-lg border border-border bg-surface p-4">
       <div className="flex items-start justify-between gap-2">
         <p className="text-xs font-medium text-muted">{kpi.label}</p>
-        {kpi.value_kind && <Badge tone={KIND_TONE[kpi.value_kind]}>{kpi.value_kind}</Badge>}
+        <span className="flex flex-wrap justify-end gap-1">
+          {kpi.quality === "below_baseline" && <Badge tone="warning">below baseline</Badge>}
+          {kpi.value_kind && <Badge tone={KIND_TONE[kpi.value_kind]}>{kpi.value_kind}</Badge>}
+        </span>
       </div>
       {available ? (
         <>
           <p className="mt-2 text-2xl font-semibold tracking-tight tabular-nums">
             {kpi.unit === "%" ? (
               fmtPct(kpi.value)
+            ) : kpi.key === "estimated_cost_exposure" ? (
+              <>
+                {Number(kpi.value) > 0 ? "+" : Number(kpi.value) < 0 ? "−" : ""}
+                {Math.abs(Number(kpi.value)).toLocaleString("en-GB", { maximumFractionDigits: 0 })}
+                <span className="ml-1 text-sm font-normal text-muted">{kpi.currency} · {kpi.unit}</span>
+              </>
             ) : (
               <>
                 {Number(kpi.value).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -92,6 +102,14 @@ export default function DashboardPage() {
   const bench = data
     ? [{ key: "b", label: "Extra-EU imports", color: SERIES_COLORS[0], points: data.benchmark_series.map((p) => ({ date: p.date, value: Number(p.value) })) }]
     : [];
+  // customer prices start the comparison window; the benchmark is trimmed to the same months
+  const firstCustomer = data?.customer_series[0]?.date ?? "";
+  const marketVsCustomer = data
+    ? [
+        { key: "m", label: "Market benchmark (customs)", color: SERIES_COLORS[0], points: (bench[0]?.points ?? []).filter((p) => p.date >= firstCustomer) },
+        { key: "c", label: "Your weighted avg. price", color: SERIES_COLORS[1], points: data.customer_series.map((p) => ({ date: p.date, value: Number(p.value) })) },
+      ]
+    : [];
   return (
     <>
       <PageHeader
@@ -139,9 +157,77 @@ export default function DashboardPage() {
         ) : (
           <ChartPanel title="Historical Price Trend" empty="Appears once validated market observations are imported." />
         )}
-        <ChartPanel title="Forecast vs Historical Price" empty="Appears once forecasts pass backtesting against baselines (Sprint 3)." />
-        <ChartPanel title="Market vs Customer Price" empty="Arrives in Sprint 3, with explicit rules for comparing your prices with a customs benchmark (different specification and delivery terms)." />
-        <ChartPanel title="Cost Impact Scenarios" empty="Appears once a cost model with your expected volumes is set up (Sprint 3)." />
+        {data && data.forecast_points.length > 0 ? (
+          <ChartFrame
+            title="Forecast vs Historical Price (EUR/kg)"
+            table={
+              <SeriesTable
+                series={[{ key: "f", label: "Forecast", color: SERIES_COLORS[0], points: data.forecast_points.map((f) => ({ date: f.target_date, value: Number(f.value) })) }]}
+                valueFormat={(v) => `€${v.toFixed(2)}`}
+              />
+            }
+            caption={
+              <>
+                {data.forecast_points.some((f) => f.quality !== "reliable")
+                  ? "At some horizons no model beat the naive baseline: treat those values as 'no change'. "
+                  : "Selected models beat the naive baselines in backtesting. "}
+                Shaded: prediction interval. <Link href="/forecasting" className="text-accent hover:underline">Model details</Link>
+              </>
+            }
+          >
+            <ForecastChart
+              history={bench[0]?.points.slice(-24) ?? []}
+              forecast={data.forecast_points.map((f) => ({ date: f.target_date, value: Number(f.value), lower: Number(f.lower), upper: Number(f.upper) }))}
+              valueFormat={(v) => `€${v.toFixed(2)}`}
+              height={224}
+            />
+          </ChartFrame>
+        ) : (
+          <ChartPanel title="Forecast vs Historical Price" empty="Appears once a forecast has been generated and backtested against baselines." />
+        )}
+        {data && data.customer_series.length > 0 && data.benchmark_series.length > 0 ? (
+          <ChartFrame
+            title="Market vs Customer Price (EUR/kg)"
+            table={<SeriesTable series={marketVsCustomer} valueFormat={(v) => `€${v.toFixed(2)}`} />}
+            caption={
+              <>
+                Your monthly weighted average purchase price vs the EU customs import value. They are not the same price: the
+                benchmark is a border value for a broader product code, your price includes delivery, specification and margins.
+                Read the gap as a trend. Prices are compared only in EUR per kg (tonnes converted × 1/1000; other currencies and
+                volume units are left out). {data.customer_series_note}
+              </>
+            }
+          >
+            <TimeLineChart series={marketVsCustomer} valueFormat={(v) => `€${v.toFixed(2)}`} height={224} />
+          </ChartFrame>
+        ) : (
+          <ChartPanel
+            title="Market vs Customer Price"
+            empty={data?.customer_series_note ?? "Appears once purchases in EUR per mass unit are uploaded in My Purchases."}
+          />
+        )}
+        {data && data.cost_scenarios.length > 0 ? (
+          <ChartFrame
+            title={`Cost Impact Scenarios, next ${data.cost_scenarios_months} months (${data.organization_currency})`}
+            table={
+              <table className="w-full text-xs">
+                <tbody className="divide-y divide-border tabular-nums">
+                  {data.cost_scenarios.map((s) => (
+                    <tr key={s.key}><td className="py-1.5 pr-3">{s.label}</td><td className="py-1.5 text-right">{Math.round(Number(s.period_impact)).toLocaleString("en-GB")}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            }
+            caption={<>From your cost model. <Link href="/simulator" className="text-accent hover:underline">Open Cost Simulator</Link></>}
+          >
+            <ImpactBars
+              items={data.cost_scenarios.map((s) => ({ label: s.label, value: Number(s.period_impact), note: s.assumption }))}
+              valueFormat={(v) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(Math.round(v)).toLocaleString("en-GB")}`}
+            />
+          </ChartFrame>
+        ) : (
+          <ChartPanel title="Cost Impact Scenarios" empty="Appears once your cost model is saved in Cost Simulator." />
+        )}
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-4">

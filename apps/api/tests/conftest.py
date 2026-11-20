@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.config import Settings, get_settings
-from app.db import get_db
+from app.db import get_db, get_session_factory
 from app.main import create_app
 from app.models import Base, Commodity, DataSource, ProductSpec, SourceType
 
@@ -73,6 +73,7 @@ def client(settings: Settings, session_factory: sessionmaker[Session]) -> Iterat
 
     app.dependency_overrides[get_settings] = lambda: settings
     app.dependency_overrides[get_db] = _db
+    app.dependency_overrides[get_session_factory] = lambda: session_factory
     with TestClient(app) as c:
         yield c
 
@@ -113,6 +114,9 @@ class Actor:
 
     def post(self, url: str, org: str | None = None, **kw):
         return self.client.post(url, headers=self.headers(org), **kw)
+
+    def put(self, url: str, org: str | None = None, **kw):
+        return self.client.put(url, headers=self.headers(org), **kw)
 
     def patch(self, url: str, org: str | None = None, **kw):
         return self.client.patch(url, headers=self.headers(org), **kw)
