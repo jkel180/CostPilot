@@ -273,6 +273,7 @@ export type ForecastRunInfo = {
 export type ForecastBundle = {
   run: ForecastRunInfo | null;
   running: boolean;
+  last_failed_run: ForecastRunInfo | null;
   series_label: string;
   scope: string | null;
   history: SeriesPoint[];

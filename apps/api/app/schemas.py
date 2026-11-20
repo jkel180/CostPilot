@@ -411,6 +411,7 @@ class ForecastRunOut(BaseModel):
 class ForecastBundle(BaseModel):
     run: ForecastRunOut | None
     running: bool
+    last_failed_run: ForecastRunOut | None = None  # newer than ``run`` and failed
     series_label: str
     scope: str | None
     history: list[SeriesPoint]

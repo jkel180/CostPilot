@@ -89,15 +89,24 @@ def scenarios_for(run: ForecastRun, forecasts: list[ForecastPointOut]) -> list[S
     return out
 
 
+def last_failure(db: Session, commodity: Commodity, after: ForecastRun | None) -> ForecastRunOut | None:
+    q = select(ForecastRun).where(ForecastRun.commodity_id == commodity.id, ForecastRun.status == "failed")
+    if after is not None:
+        q = q.where(ForecastRun.generated_at > after.generated_at)
+    failed = db.scalar(q.order_by(ForecastRun.generated_at.desc()).limit(1))
+    return ForecastRunOut.model_validate(failed, from_attributes=True) if failed else None
+
+
 def bundle(db: Session, commodity: Commodity) -> ForecastBundle:
     run = latest_completed_run(db, commodity)
+    failed = last_failure(db, commodity, run)
     history = market.series(db, commodity, ObservationDataType.customs_unit_value, [market.BENCHMARK_GEOGRAPHY]).get(
         market.BENCHMARK_GEOGRAPHY, []
     )[-48:]
     spec = db.get(ProductSpec, history[-1].product_spec_id) if history and history[-1].product_spec_id else None
     if run is None:
         return ForecastBundle(
-            run=None, running=is_running(db, commodity), series_label=market.BENCHMARK_LABEL,
+            run=None, running=is_running(db, commodity), last_failed_run=failed, series_label=market.BENCHMARK_LABEL,
             scope=spec.specification_name if spec else None,
             history=[SeriesPoint(date=o.observation_date, value=o.value, quality_status=o.quality_status.value) for o in history],
             forecasts=[], backtests=[], scenarios=[],
@@ -110,6 +119,7 @@ def bundle(db: Session, commodity: Commodity) -> ForecastBundle:
     return ForecastBundle(
         run=ForecastRunOut.model_validate(run, from_attributes=True),
         running=is_running(db, commodity),
+        last_failed_run=failed,
         series_label=market.BENCHMARK_LABEL,
         scope=spec.specification_name if spec else None,
         history=[SeriesPoint(date=o.observation_date, value=o.value, quality_status=o.quality_status.value) for o in history],

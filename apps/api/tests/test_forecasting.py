@@ -201,3 +201,15 @@ def test_forecast_endpoints(actor, db, fast_models):
     k = {x["key"]: x for x in u.get("/api/v1/dashboard/summary", org=org).json()["kpis"]}
     assert k["forecast_3m"]["status"] == "available" and k["forecast_3m"]["value_kind"] == "forecast"
     assert k["forecast_3m"]["quality"] in ("reliable", "below_baseline")
+
+
+def test_stored_strings_fit_their_columns():
+    """SQLite ignores VARCHAR lengths, PostgreSQL does not: check them explicitly."""
+    from app.models import Forecast as F, ForecastBacktest as B, ForecastRun as R
+
+    mv = pipeline.model_version()
+    for model in (F, B, R):
+        assert len(mv) <= model.__table__.c.model_version.type.length, model.__tablename__
+    longest_model = max(len(m.name) for m in registry.MODELS)
+    assert longest_model <= F.__table__.c.model_name.type.length
+    assert longest_model <= B.__table__.c.model_name.type.length

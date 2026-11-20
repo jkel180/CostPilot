@@ -333,7 +333,7 @@ class Forecast(CreatedAtMixin, Base):
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     unit: Mapped[str] = mapped_column(String(30), nullable=False)
     model_name: Mapped[str] = mapped_column(String(100), nullable=False)
-    model_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    model_version: Mapped[str] = mapped_column(String(100), nullable=False)
     input_data_version: Mapped[str] = mapped_column(String(100), nullable=False)
     quality_status: Mapped[ForecastQualityStatus] = mapped_column(
         _enum(ForecastQualityStatus, "forecast_quality_status"), nullable=False
@@ -351,7 +351,7 @@ class ForecastBacktest(CreatedAtMixin, Base):
         ForeignKey("commodities.id", ondelete="RESTRICT"), nullable=False
     )
     model_name: Mapped[str] = mapped_column(String(100), nullable=False)
-    model_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    model_version: Mapped[str] = mapped_column(String(100), nullable=False)
     input_data_version: Mapped[str] = mapped_column(String(100), nullable=False)
     evaluation_date: Mapped[date] = mapped_column(Date, nullable=False)
     horizon_months: Mapped[int] = mapped_column(Integer, nullable=False)

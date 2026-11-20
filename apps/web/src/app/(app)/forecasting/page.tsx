@@ -88,6 +88,15 @@ export default function ForecastingPage() {
         {data?.running && (
           <Alert tone="warning">A new forecast is being computed (backtesting six models takes a few minutes). This page refreshes automatically.</Alert>
         )}
+        {data?.last_failed_run && !data.running && (
+          <Alert>
+            The latest forecast run ({fmtDateTime(data.last_failed_run.generated_at)}) failed
+            {run ? "; the previous forecast is shown below." : "."}
+            {me.is_platform_admin && data.last_failed_run.error && (
+              <span className="mt-1 block break-words font-mono text-[11px]">{data.last_failed_run.error.slice(0, 400)}</span>
+            )}
+          </Alert>
+        )}
         {data && !run && !data.running && (
           <Card>
             <EmptyState title="No forecast yet">
