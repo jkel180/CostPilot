@@ -46,6 +46,7 @@ def series(
     include_unvalidated: bool = False,
     since: date | None = None,
     include_rejected: bool = False,
+    include_panel: bool = False,
 ) -> dict[str, list[MarketObservation]]:
     q = select(MarketObservation).where(
         MarketObservation.commodity_id == commodity.id, MarketObservation.data_type == data_type
@@ -60,7 +61,8 @@ def series(
         q = q.where(MarketObservation.observation_date >= since)
     out: dict[str, list[MarketObservation]] = {}
     for o in db.scalars(q.order_by(MarketObservation.geography, MarketObservation.observation_date)):
-        out.setdefault(o.geography, []).append(o)
+        if include_panel or ":" not in o.geography:  # "<reporter>:<partner>" = model support series
+            out.setdefault(o.geography, []).append(o)
     return out
 
 

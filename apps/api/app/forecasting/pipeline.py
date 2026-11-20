@@ -67,6 +67,7 @@ class PreparedSeries:
     dates: list[date]
     values: np.ndarray
     notes: list[str] = field(default_factory=list)
+    panel: dict = field(default_factory=dict)  # support series used by pooled models
 
     @property
     def data_version(self) -> str:
@@ -151,8 +152,8 @@ def _backtest(y: np.ndarray, models: tuple[ForecastModel, ...]) -> dict[tuple[st
             if len(history) < m.min_history:
                 continue
             try:
-                if m.name == "ensemble" and "ets" in cache and "arima" in cache:
-                    fc = (cache["ets"] + cache["arima"]) / 2
+                if m.components and all(c in cache for c in m.components):
+                    fc = sum(cache[c] for c in m.components) / len(m.components)
                 else:
                     fc = m.predict(history, hmax)
             except ValueError:
@@ -195,10 +196,39 @@ def _metrics(model: ForecastModel, h: int, recs: list[tuple[int, float, float, f
     )
 
 
-def run_pipeline(points: list[tuple[date, float]], models: tuple[ForecastModel, ...] | None = None) -> PipelineResult:
+def _align_panel(series: PreparedSeries, panel_points: dict[str, list[tuple[date, float]]]) -> dict[str, np.ndarray]:
+    out = {}
+    for name, pts in panel_points.items():
+        by_month = {date(d.year, d.month, 1): float(v) for d, v in pts if v and v > 0}
+        out[name] = np.array([by_month.get(d, np.nan) for d in series.dates])
+    return out
+
+
+def input_version(series: PreparedSeries, panel: dict[str, np.ndarray]) -> str:
+    """Hash of the benchmark series plus every support series actually used."""
+    if not panel:
+        return series.data_version
+    h = hashlib.sha256(series.data_version.encode())
+    for name in sorted(panel):
+        h.update(name.encode())
+        h.update(np.nan_to_num(panel[name], nan=-1.0).round(6).tobytes())
+    return h.hexdigest()
+
+
+def run_pipeline(
+    points: list[tuple[date, float]],
+    models: tuple[ForecastModel, ...] | None = None,
+    panel_points: dict[str, list[tuple[date, float]]] | None = None,
+) -> PipelineResult:
+    from app.forecasting.pooled import make_pooled_models
+
     models = models if models is not None else model_registry.MODELS
     series = prepare_series(points)
     y = series.values
+    panel = _align_panel(series, panel_points or {})
+    pooled = make_pooled_models(series.dates, panel) if panel else ()
+    models = tuple(models) + tuple(pooled)
+    series.panel = {k: v for k, v in panel.items()} if pooled else {}
     if len(y) < MIN_TRAIN + MIN_BACKTESTS:
         series.notes.append(
             f"{len(y)} usable months; at least {MIN_TRAIN + MIN_BACKTESTS} are needed to backtest forecasts"
@@ -270,13 +300,20 @@ def complete_run(db, run_id: uuid.UUID):
         obs = market.series(db, commodity, ObservationDataType.customs_unit_value, [market.BENCHMARK_GEOGRAPHY]).get(
             market.BENCHMARK_GEOGRAPHY, []
         )
-        result = run_pipeline([(o.observation_date, float(o.value)) for o in obs])
+        panel_obs = {
+            g: [(o.observation_date, float(o.value)) for o in pts]
+            for g, pts in market.series(db, commodity, ObservationDataType.customs_unit_value, include_panel=True).items()
+            if ":" in g
+        }
+        result = run_pipeline([(o.observation_date, float(o.value)) for o in obs], panel_points=panel_obs)
         s = result.series
         run.product_spec_id = obs[-1].product_spec_id if obs else None
         run.currency = obs[-1].currency if obs else None
         run.unit = obs[-1].unit if obs else None
         run.status = result.status
-        run.input_data_version = s.data_version if len(s.values) else None
+        run.input_data_version = input_version(s, s.panel) if len(s.values) else None
+        if s.panel:
+            run.settings = {**run.settings, "pooled_support_series": sorted(s.panel)}
         run.n_observations = len(s.values)
         run.first_date = s.dates[0] if s.dates else None
         run.last_date = s.dates[-1] if s.dates else None

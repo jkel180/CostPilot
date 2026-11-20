@@ -23,6 +23,8 @@ class ForecastModel:
     is_baseline: bool
     min_history: int
     fn: Callable[[np.ndarray, int], np.ndarray]
+    #: averaged models: in the backtest their components' forecasts are reused
+    components: tuple[str, ...] = ()
 
     def predict(self, y: np.ndarray, h: int) -> np.ndarray:
         if len(y) < self.min_history:
@@ -95,6 +97,6 @@ MODELS: tuple[ForecastModel, ...] = (
     ForecastModel("ets", "Exponential smoothing (damped trend)", False, 24, _ets),
     ForecastModel("ets_seasonal", "Exponential smoothing (damped trend + seasonality)", False, 36, _ets_seasonal),
     ForecastModel("arima", "ARIMA (order by AIC)", False, 24, _arima),
-    ForecastModel("ensemble", "Ensemble (mean of ETS and ARIMA)", False, 24, _ensemble),
+    ForecastModel("ensemble", "Ensemble (mean of ETS and ARIMA)", False, 24, _ensemble, components=("ets", "arima")),
 )
 BY_NAME = {m.name: m for m in MODELS}

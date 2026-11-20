@@ -13,19 +13,19 @@ from app.models import Commodity, IngestionRun, MarketObservation, QualityStatus
 MONTHS = [f"2026-{m:02d}" for m in range(1, 8)]
 
 
-def jsonstat(cells: dict[tuple[str, str, str], float]) -> dict:
+def jsonstat(cells: dict[tuple[str, str, str], float], reporter: str = "EU27_2020") -> dict:
     """Build a JSON-stat doc from {(partner, indicator, month): value}."""
     partners = sorted({p for p, _, _ in cells})
     inds = ["VALUE_IN_EUROS", "QUANTITY_IN_100KG"]
     dims = {
-        "freq": ["M"], "reporter": ["EU27_2020"], "partner": partners, "product": ["20093939"],
+        "freq": ["M"], "reporter": [reporter], "partner": partners, "product": ["20093939"],
         "flow": ["1"], "indicators": inds, "time": MONTHS,
     }
     ids = list(dims)
     size = [len(dims[d]) for d in ids]
     value = {}
     for (p, ind, t), v in cells.items():
-        coord = {"freq": "M", "reporter": "EU27_2020", "partner": p, "product": "20093939", "flow": "1",
+        coord = {"freq": "M", "reporter": reporter, "partner": p, "product": "20093939", "flow": "1",
                  "indicators": ind, "time": t}
         pos = 0
         for d, n in zip(ids, size):
@@ -63,7 +63,8 @@ def fake_get(cells):
 
     def get(url, params):
         calls.append(params)
-        return jsonstat(cells)
+        reporter = next(v for k, v in params if k == "reporter")
+        return jsonstat(cells, reporter)
 
     get.calls = calls
     return get
@@ -97,7 +98,8 @@ def test_comext_quality_rules_and_provenance(db, lemon):
     assert by[("AR", 7)].quality_status == QualityStatus.rejected  # 5x the series median
     assert by[("MX", 1)].quality_status == QualityStatus.unvalidated and "low volume" in by[("MX", 1)].quality_note
     assert ("MX", 7) not in by  # no quantity -> not stored
-    assert run.rows_rejected == 1 and run.data_version and len(run.data_version) == 64
+    # one record without quantity in the EU request and the same one echoed in the per-country request
+    assert run.rows_rejected == 2 and run.data_version and len(run.data_version) == 64
 
 
 def test_rerun_is_idempotent_and_updates_values(db, lemon):
@@ -204,3 +206,16 @@ def test_manual_market_upload(actor):
     r = ops.post("/api/v1/admin/market-observations/upload", files={"file": ("m.csv", content, "text/csv")},
                  data={"original_source": ""})
     assert r.status_code == 422
+
+
+def test_panel_support_series_are_stored_but_hidden_from_market_views(db, lemon, actor):
+    run_connector(db, EurostatComextConnector(lemon, http_get=fake_get(fixture_cells())))
+    geos = {g for (g,) in db.execute(select(MarketObservation.geography)).all()}
+    panel = {g for g in geos if ":" in g}
+    assert panel and {g.split(":")[0] for g in panel} == {"IT"}  # fake API answers with the first reporter
+    vol_panel = db.scalar(select(func.count(MarketObservation.id)).where(
+        MarketObservation.geography.contains(":"), MarketObservation.data_type == "trade_volume"))
+    assert vol_panel == 0  # only unit values are kept for support series
+    u = actor("u@x.com")
+    assert all(":" not in s["geography"] for s in u.get("/api/v1/market/series").json()["series"])
+    assert all(":" not in o["geography"] for o in u.get("/api/v1/market/overview").json()["origins"])

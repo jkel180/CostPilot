@@ -50,3 +50,29 @@ Con α = 1 i risultati sono simili o peggiori (tutti insieme: +63% e +142% a 3 e
 - Con dati di raccolto mensili o stagionali (non solo annuali FAOSTAT).
 
 Lo script dell'analisi è stato eseguito fuori dal prodotto; per ripeterla basta lo stesso schema di backtest della pipeline (`apps/api/app/forecasting/pipeline.py`).
+
+---
+
+# Seconda valutazione: dati più vicini al mercato e modello "pooled" (novembre 2026)
+
+**Protocollo, fissato prima dei risultati.** Sviluppo e scelta solo sulle origini con target prima degli ultimi 12 mesi; gli ultimi 12 mesi usati **una sola volta** come conferma. Regola di adozione: il candidato deve battere l'exponential smoothing in media e su almeno 2 orizzonti su 3 nella finestra di conferma.
+
+**Nuovi dati (Eurostat Comext).**
+- Limoni freschi (CN 08055010), import extra-UE e intra-UE (soprattutto Spagna): la materia prima del concentrato.
+- Lo stesso succo (CN 20093939) importato da 8 Paesi UE (IT, DE, NL, ES, FR, BE, PL, AT), da fuori e da dentro l'UE: 16 serie che seguono lo stesso mercato.
+- Il portale Agri-food UE (prezzi dei limoni freschi) non risponde agli indirizzi API documentati: escluso.
+
+**Idea.** Con ~90 mesi per serie una regressione non impara nulla di stabile; addestrandola su tutte le serie insieme ("pooled") gli esempi diventano circa 10 volte di più.
+
+| Candidato (variazione MAE vs ETS) | Sviluppo 1 / 3 / 6 mesi | Conferma 1 / 3 / 6 mesi |
+|---|---|---|
+| Regressione sulla sola serie benchmark | +15% / +21% / +13% | +0% / +8% / +12% |
+| Pooled (8 Paesi) | +3% / −5% / −7% | −4% / −6% / +7% |
+| Pooled + limoni freschi | +14% / −4% / −7% | +6% / −2% / +6% |
+| **Media ETS + pooled** | **−3% / −5% / −4%** | **−4% / −4% / +3%** |
+
+**Esito.** La media ETS + pooled passa la regola (meglio in media e a 1 e 3 mesi), con un miglioramento piccolo. I limoni freschi non aiutano. Nel prodotto i due nuovi modelli sono stati aggiunti **come candidati**: la pipeline continua a scegliere, orizzonte per orizzonte, il modello con l'errore più basso nel backtest, e solo se batte la baseline.
+
+**Effetto sulla prima previsione (dati fino a settembre 2026).** A 1 mese viene scelto ETS + pooled (errore −7,0% vs naive, contro −5,5% di ETS): €2,26/kg invece di €2,30, intervallo €1,94–2,57. A 3 e 6 mesi resta ETS.
+
+Le 16 serie di supporto sono salvate come osservazioni Comext (`<paese>:<partner>`), incluse nell'`input_data_version` di ogni previsione e non mostrate nelle pagine di mercato.

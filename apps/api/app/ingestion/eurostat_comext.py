@@ -47,8 +47,18 @@ COMEXT_CONFIG: dict[str, dict[str, Any]] = {
         "partners": ["EXT_EU27_2020", "AR", "ZA", "BR", "US", "MX", "TR", "UY", "CL", "PE", "IL"],
         "since": "2019-01",
         "min_validated_kg": 50_000,
+        # Support series for the pooled forecast model: the same product imported by the main
+        # EU importers. Stored as "<reporter>:<partner>" unit values, not shown as market origins.
+        "panel_reporters": ["IT", "DE", "NL", "ES", "FR", "BE", "PL", "AT"],
+        "panel_partners": ["EXT_EU27_2020", "INT_EU27_2020"],
     }
 }
+
+PANEL_SEPARATOR = ":"
+
+
+def is_panel_geography(geography: str) -> bool:
+    return PANEL_SEPARATOR in geography
 
 VALUE = "VALUE_IN_EUROS"
 QUANTITY = "QUANTITY_IN_100KG"
@@ -112,25 +122,32 @@ class EurostatComextConnector(Connector):
         r.raise_for_status()
         return r.json()
 
-    def fetch_data(self) -> list[dict[str, Any]]:
+    def _request(self, reporters: list[str], partners: list[str]) -> list[dict[str, Any]]:
         params = [
-            ("format", "JSON"), ("lang", "en"), ("freq", "M"),
-            ("reporter", self.cfg["reporter"]), ("flow", self.cfg["flow"]),
-            ("indicators", VALUE), ("indicators", QUANTITY),
-            ("sinceTimePeriod", self.cfg["since"]),
+            ("format", "JSON"), ("lang", "en"), ("freq", "M"), ("flow", self.cfg["flow"]),
+            ("indicators", VALUE), ("indicators", QUANTITY), ("sinceTimePeriod", self.cfg["since"]),
         ]
-        params += [("partner", p) for p in self.cfg["partners"]]
+        params += [("reporter", r) for r in reporters]
+        params += [("partner", p) for p in partners]
         params += [("product", p) for p in self.cfg["products"]]
         doc = self._http_get(API_BASE, params)
         self.dataset_updated = doc.get("updated")
-        cells = parse_jsonstat(doc)
-        # pivot value + quantity into one record per (partner, product, month)
+        return parse_jsonstat(doc)
+
+    def fetch_data(self) -> list[dict[str, Any]]:
+        cells = [{**c, "panel": False} for c in self._request([self.cfg["reporter"]], self.cfg["partners"])]
+        if self.cfg.get("panel_reporters"):
+            cells += [{**c, "panel": True}
+                      for c in self._request(self.cfg["panel_reporters"], self.cfg["panel_partners"])]
+        # pivot value + quantity into one record per (reporter, partner, product, month)
         records: dict[tuple, dict[str, Any]] = {}
         for c in cells:
-            key = (c["partner"], c["product"], c["time"])
+            reporter = c.get("reporter", self.cfg["reporter"])
+            key = (reporter, c["partner"], c["product"], c["time"])
             rec = records.setdefault(
                 key,
-                {"partner": c["partner"], "partner_label": c["partner_label"], "product": c["product"],
+                {"reporter": reporter, "panel": c["panel"], "partner": c["partner"],
+                 "partner_label": c["partner_label"], "product": c["product"],
                  "period": c["time"], "value_eur": None, "quantity_kg": None},
             )
             if c["indicators"] == VALUE:
@@ -153,10 +170,10 @@ class EurostatComextConnector(Connector):
         by_series: dict[tuple, list[float]] = {}
         for rec in valid:
             if rec["quantity_kg"] >= self.cfg["min_validated_kg"]:
-                by_series.setdefault((rec["partner"], rec["product"]), []).append(rec["unit_value"])
+                by_series.setdefault((rec["reporter"], rec["partner"], rec["product"]), []).append(rec["unit_value"])
         medians = {k: median(v) for k, v in by_series.items() if len(v) >= 3}
         for rec in valid:
-            m = medians.get((rec["partner"], rec["product"]))
+            m = medians.get((rec["reporter"], rec["partner"], rec["product"]))
             rec["series_median"] = m
             if rec["quantity_kg"] < self.cfg["min_validated_kg"]:
                 rec["quality"] = (QualityStatus.unvalidated, f"low volume (< {self.cfg['min_validated_kg'] // 1000} t)")
@@ -174,8 +191,11 @@ class EurostatComextConnector(Connector):
             y, m = rec["period"].split("-")
             obs_date = date(int(y), int(m), 1)
             spec_id = self.spec_ids.get(rec["product"])
+            geography = (f"{rec['reporter']}{PANEL_SEPARATOR}{rec['partner']}" if rec["panel"]
+                         else rec["partner"])
             attrs = {
-                "reporter": self.cfg["reporter"],
+                "reporter": rec["reporter"],
+                "role": "panel" if rec["panel"] else "market",
                 "flow": "import",
                 "cn_code": rec["product"],
                 "partner_label": rec["partner_label"],
@@ -188,7 +208,7 @@ class EurostatComextConnector(Connector):
             rows.append(
                 NormalizedObservation(
                     observation_date=obs_date,
-                    geography=rec["partner"],
+                    geography=geography,
                     value=Decimal(str(rec["unit_value"])).quantize(Decimal("0.000001"), ROUND_HALF_UP),
                     currency="EUR",
                     unit="kg",
@@ -199,6 +219,8 @@ class EurostatComextConnector(Connector):
                     attributes=attrs,
                 )
             )
+            if rec["panel"]:
+                continue
             rows.append(
                 NormalizedObservation(
                     observation_date=obs_date,

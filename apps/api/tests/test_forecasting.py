@@ -172,7 +172,7 @@ def test_same_input_gives_same_forecast(db, fast_models):
 def test_failure_is_recorded(db, monkeypatch):
     com = seed_benchmark(db)
 
-    def boom(points, models=None):
+    def boom(*args, **kwargs):
         raise RuntimeError("numerical failure")
 
     monkeypatch.setattr(pipeline, "run_pipeline", boom)
@@ -213,3 +213,49 @@ def test_stored_strings_fit_their_columns():
     longest_model = max(len(m.name) for m in registry.MODELS)
     assert longest_model <= F.__table__.c.model_name.type.length
     assert longest_model <= B.__table__.c.model_name.type.length
+
+
+# ------------------------------------------------------------------ pooled model across support series
+
+
+def _panel(n=70, seed=3):
+    rng = np.random.default_rng(seed)
+    ds = months(n)
+    base = np.exp(np.cumsum(rng.normal(0, 0.03, n))) * 2
+    bench = [(d, float(v)) for d, v in zip(ds, base)]
+    panel = {f"C{k}:EXT_EU27_2020": [(d, float(v * (1 + 0.1 * k) * np.exp(rng.normal(0, 0.02))))
+                                     for d, v in zip(ds, base)] for k in range(4)}
+    return bench, panel
+
+
+def test_pooled_models_join_the_competition_when_support_series_exist():
+    bench, panel = _panel()
+    r = run_pipeline(bench, models=(NAIVE,), panel_points=panel)
+    names = {m.model for m in r.metrics}
+    assert {"pooled", "ets_pooled"} <= names and r.series.panel
+    assert run_pipeline(bench, models=(NAIVE,)).series.panel == {}
+
+
+def test_pooled_backtest_never_uses_future_values():
+    from app.forecasting.pooled import make_pooled_models
+
+    bench, panel = _panel()
+    s = prepare_series(bench)
+    aligned = pipeline._align_panel(s, panel)
+    k = 55
+    y2 = s.values.copy()
+    y2[k:] *= 3
+    aligned2 = {g: np.where(np.arange(len(v)) >= k, v * 3, v) for g, v in aligned.items()}
+    pooled = make_pooled_models(s.dates, aligned)[0]
+    pooled2 = make_pooled_models(s.dates, aligned2)[0]
+    for t in range(40, k):
+        assert pooled.predict(s.values[: t + 1], 6) == pytest.approx(pooled2.predict(y2[: t + 1], 6), rel=1e-9)
+
+
+def test_input_version_covers_support_series():
+    bench, panel = _panel()
+    s = prepare_series(bench)
+    a = pipeline.input_version(s, pipeline._align_panel(s, panel))
+    panel2 = {**panel, "C0:EXT_EU27_2020": [(d, v * 1.01) for d, v in panel["C0:EXT_EU27_2020"]]}
+    assert a != pipeline.input_version(s, pipeline._align_panel(s, panel2))
+    assert pipeline.input_version(s, {}) == s.data_version

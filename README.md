@@ -38,7 +38,7 @@ Database e autenticazione: **Supabase** (PostgreSQL gestito + Supabase Auth).
 
 ## Sprint 3 — Analytics
 
-- [x] Pipeline di forecasting riproducibile (1/3/6 mesi) sul benchmark Eurostat: naive, seasonal naive, exponential smoothing (con e senza stagionalità), ARIMA (ordine scelto per AIC), ensemble ETS+ARIMA
+- [x] Pipeline di forecasting riproducibile (1/3/6 mesi) sul benchmark Eurostat: naive, seasonal naive, exponential smoothing (con e senza stagionalità), ARIMA (ordine scelto per AIC), ensemble ETS+ARIMA, regressione pooled sulle importazioni di 8 Paesi UE e media ETS+pooled (vedi `docs/valutazione-fattori-esterni.md`)
 - [x] Backtesting rolling-origin su 36 origini: ogni previsione usa solo i dati disponibili a quella data (test automatico anti look-ahead)
 - [x] Metriche: MAE, WAPE, directional accuracy, copertura degli intervalli; un modello viene usato **solo se batte la miglior baseline**, altrimenti la previsione è marcata `below_baseline` e mostrata come "nessuna variazione"
 - [x] Intervalli di previsione all'80% empirici (quantile degli errori di backtest); scenari prezzi più bassi / base / più alti = estremi dell'intervallo e previsione centrale, non generati da un LLM
