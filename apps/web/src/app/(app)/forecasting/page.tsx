@@ -191,6 +191,22 @@ export default function ForecastingPage() {
               <ForecastChart history={history} forecast={band} valueFormat={eur} historyLabel="Observed (validated months)" />
             </ChartFrame>
 
+            <Card title="What the forecast is based on">
+              <div className="space-y-2 text-sm leading-relaxed text-muted">
+                <p>
+                  <span className="font-medium text-foreground">Only the history of the benchmark price.</span> A flat central line
+                  means the models see no reliable trend in recent months, not that prices will stay still: the shaded range shows how
+                  far they could move.
+                </p>
+                <p>
+                  External factors were tested with the same backtest (November 2026): EUR/USD exchange rate (ECB), Argentine import
+                  prices, EU import volumes and the El Niño index (NOAA). None reduced the forecast error consistently across 1, 3 and
+                  6 months, and some increased it, so none is used. They will be re-tested as more data and market price sources
+                  become available.
+                </p>
+              </div>
+            </Card>
+
             <Card title="Scenarios">
               <div className="-mx-5 overflow-x-auto">
                 <table className="w-full min-w-[640px] text-sm">
