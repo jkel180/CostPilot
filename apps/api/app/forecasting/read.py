@@ -62,7 +62,7 @@ def forecasts_for(db: Session, run: ForecastRun) -> list[ForecastPointOut]:
             horizon_months=f.horizon_months, target_date=f.target_date, value=f.forecast_value,
             lower=f.lower_bound, upper=f.upper_bound, interval_level=f.interval_level,
             model=f.model_name, model_label=_label(f.model_name), quality=f.quality_status.value,
-            baseline=base_name, model_mae=model_bt.mae if model_bt else None,
+            baseline=base_name, baseline_label=_label(base_name).lower() if base_name else None, model_mae=model_bt.mae if model_bt else None,
             baseline_mae=base_bt.mae if base_bt else None, improvement_pct=improvement,
         ))
     return out

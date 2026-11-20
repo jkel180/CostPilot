@@ -141,7 +141,7 @@ export default function ForecastingPage() {
                     <QualityBadge f={f} />
                     <span>
                       {f.model_label}
-                      {f.quality === "reliable" && f.improvement_pct && ` · ${f.improvement_pct}% lower error than ${f.baseline}`}
+                      {f.quality === "reliable" && f.improvement_pct && ` · ${f.improvement_pct}% lower error than the ${f.baseline_label ?? f.baseline} baseline`}
                     </span>
                   </div>
                 </div>

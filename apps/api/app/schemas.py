@@ -364,6 +364,7 @@ class ForecastPointOut(BaseModel):
     model_label: str
     quality: str  # reliable | below_baseline | insufficient_data
     baseline: str | None
+    baseline_label: str | None = None
     model_mae: Decimal | None
     baseline_mae: Decimal | None
     improvement_pct: Decimal | None  # MAE reduction vs best baseline

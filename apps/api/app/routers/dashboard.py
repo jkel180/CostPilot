@@ -97,7 +97,7 @@ def _forecast_kpis(db, com) -> tuple[list[Kpi], list]:
         level = int((f.interval_level or Decimal("0.8")) * 100)
         rng = f"{level}% range {f.lower:.2f}-{f.upper:.2f}"
         if f.quality == "reliable":
-            note = f"{rng} · {f.model_label}, {f.improvement_pct}% lower error than the {f.baseline} baseline"
+            note = f"{rng} · {f.model_label}, {f.improvement_pct}% lower error than the {f.baseline_label} baseline"
         else:
             note = f"{rng} · no model beat the naive baseline: not a reliable prediction"
         kpis.append(Kpi(key=key, label=label, status="available", value=f.value, unit=run.unit, currency=run.currency,

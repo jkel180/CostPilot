@@ -226,6 +226,7 @@ export type ForecastPoint = {
   model_label: string;
   quality: "reliable" | "below_baseline" | "insufficient_data";
   baseline: string | null;
+  baseline_label: string | null;
   model_mae: string | null;
   baseline_mae: string | null;
   improvement_pct: string | null;
